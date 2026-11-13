@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minimal Comment DFA</title>
+<meta name="description" content="A 9-state table-driven transducer that strips C comments, stepped byte by byte in WebAssembly, plus partition-refinement minimization of a 16-state first design.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232457d6'/%3E%3Ctext x='8' y='12' font-size='10' text-anchor='middle' fill='white' font-family='monospace'%3EC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="shared/style.css">
+<style>
+  .stepgrid { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); }
+  @media (max-width: 900px) { .stepgrid { grid-template-columns: minmax(0, 1fr); } }
+  #input { min-height: 70px; height: 70px; }
+  .tape { display: flex; flex-wrap: wrap; gap: 2px; font: 13px var(--mono); margin: 8px 0; }
+  .tape span { padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel-2); white-space: pre; }
+  .tape span.done { opacity: .5; }
+  .tape span.cur { border-color: var(--accent); background: var(--accent-soft); opacity: 1; }
+  table.tt { border-collapse: collapse; font: 12px var(--mono); width: 100%; }
+  table.tt th, table.tt td { border: 1px solid var(--border); padding: 4px 6px; text-align: center; }
+  table.tt th { background: var(--panel-2); color: var(--muted); }
+  table.tt td.on { background: var(--accent-soft); outline: 2px solid var(--accent); }
+  table.tt tr.row-on th { color: var(--accent); }
+  .scroll { overflow-x: auto; }
+  .groups td.g { font: 12px var(--mono); text-align: center; color: #10151c; border: 1px solid var(--border); }
+  .big { font-size: 22px; font-family: var(--mono); }
+</style>
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <h1>Minimal Comment-Stripping DFA</h1>
+  <p>One transition table drives the C engine, draws the diagram, and is proven minimal. Everything below runs the real C code in WebAssembly.</p>
+  <nav><a href="../">All sandboxes</a><a href="#min">Minimization</a></nav>
+</div></header>
+
+<main class="wrap grid">
+  <section class="card">
+    <h2>Step the machine
+      <span class="right"><span class="tabs" id="machine"><button data-v="0" class="on">Minimal · 9 states</button><button data-v="1">First design · 16 states</button></span></span></h2>
+    <label class="note" for="input">Input bytes (edit me)</label>
+    <textarea id="input" spellcheck="false" wrap="off"></textarea>
+    <div class="row">
+      <button id="reset">⏮ Reset</button><button id="prev">◀ Back</button>
+      <button id="next" class="primary">Step ▶</button><button id="play">▶ Play</button>
+      <label class="inline">speed <input id="speed" type="range" min="1" max="20" value="4"></label>
+      <span class="spacer"></span><span class="note" id="pos"></span>
+    </div>
+    <div class="tape" id="tape"></div>
+    <div class="grid stepgrid">
+      <div id="diagram" aria-label="State diagram"></div>
+      <div>
+        <table class="kv">
+          <tr><th>byte</th><td><span class="big" id="vByte">–</span> <span class="note" id="vClass"></span></td></tr>
+          <tr><th>transition</th><td id="vEdge" class="mono">–</td></tr>
+          <tr><th>output action</th><td id="vAct" class="mono">–</td></tr>
+          <tr><th>at end of input</th><td id="vEof" class="mono">–</td></tr>
+        </table>
+        <p class="note">Output so far</p>
+        <pre class="out" id="vOut"></pre>
+        <p class="note">Same input on both designs gives byte-identical output; 2,000 random inputs are checked in CI.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Transition table (the single source of truth)</h2>
+    <div class="scroll"><table class="tt" id="tt"></table></div>
+    <p class="note">Rows: current state. Columns: input class. Cell: next state / output. <code>'/'+emit</code> writes the held slash, then the byte.</p>
+  </section>
+
+  <section class="card" id="min">
+    <h2>Minimization, round by round <span class="right"><span class="tabs" id="minMachine"><button data-v="1" class="on">First design</button><button data-v="0">Minimal</button></span></span></h2>
+    <p class="lead">Moore partition refinement: start by grouping states with identical outputs, then split any group whose members move to different groups on some input. When nothing splits, each group is one state of the minimal machine.</p>
+    <div class="scroll"><table class="tt groups" id="groups"></table></div>
+    <p class="note" id="minSummary"></p>
+  </section>
+</main>
+<footer class="site"><div class="wrap">Compiled from C with Emscripten; runs entirely in your browser. Source code is in a private repository.</div></footer>
+<script src="shared/runtime.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

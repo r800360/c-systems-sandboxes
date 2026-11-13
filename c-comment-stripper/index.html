@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C Comment Stripper</title>
+<meta name="description" content="A hand-written DFA in C, compiled to WebAssembly, that removes C comments while keeping literals and line numbers intact.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232457d6'/%3E%3Ctext x='8' y='12' font-size='10' text-anchor='middle' fill='white' font-family='monospace'%3EC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="shared/style.css">
+<style>
+  .io textarea, .io pre.out { min-height: 300px; height: 300px; white-space: pre; overflow: auto; }
+  .stepgrid { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+  @media (max-width: 900px) { .stepgrid { grid-template-columns: minmax(0, 1fr); } }
+  .lines { counter-reset: ln; }
+  .lines span.l { display: block; }
+  .lines span.l::before { counter-increment: ln; content: counter(ln); display: inline-block; width: 2.4em; color: var(--muted); text-align: right; margin-right: 10px; user-select: none; }
+  .lines span.l.err { background: var(--bad-soft); }
+  .tl span { cursor: default; }
+  .r-code { background: var(--accent-soft); }
+  .r-comment { background: var(--amber-soft); color: var(--amber); text-decoration: line-through; }
+  .r-string { background: var(--ok-soft); color: var(--ok); }
+  .r-char { background: var(--teal-soft); color: var(--teal); }
+  .r-pending { outline: 1px dashed var(--muted); }
+  .tl span.cur { outline: 2px solid var(--accent); }
+  .swatch.code { background: var(--accent-soft); } .swatch.comment { background: var(--amber-soft); }
+  .swatch.string { background: var(--ok-soft); } .swatch.char { background: var(--teal-soft); }
+  #diagram { min-height: 220px; }
+  .step-info { font: 13px var(--mono); }
+  .big { font-size: 22px; font-family: var(--mono); }
+</style>
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <h1>C Comment Stripper</h1>
+  <p>A hand-written state machine in C, compiled to WebAssembly. Removes comments, keeps strings, chars and line numbers.</p>
+  <nav><a href="../">All sandboxes</a><a href="#how">How it works</a></nav>
+</div></header>
+
+<main class="wrap grid">
+  <section class="card">
+    <h2>Try it <span class="right"><label class="inline">Example
+      <select id="preset" aria-label="Example input"></select></label></span></h2>
+    <div class="grid cols-2 io">
+      <div><label class="note" for="src">Input (C source)</label>
+        <textarea id="src" spellcheck="false" wrap="off"></textarea></div>
+      <div><div class="row"><span class="note">Output from <code>main()</code></span><span class="spacer"></span><span id="status" class="status">…</span></div>
+        <pre id="out" class="out lines" aria-live="polite"></pre></div>
+    </div>
+    <pre id="err" class="out err" hidden></pre>
+    <p class="note" id="stats"></p>
+  </section>
+
+  <section class="card">
+    <h2>What the DFA saw, byte by byte</h2>
+    <div class="legend">
+      <span><i class="swatch code"></i>code</span><span><i class="swatch comment"></i>comment (removed)</span>
+      <span><i class="swatch string"></i>"string"</span><span><i class="swatch char"></i>'char'</span>
+      <span>hover a byte for its transition</span>
+    </div>
+    <div id="timeline" class="timeline tl" style="margin-top:10px"></div>
+    <p class="note step-info" id="hover">&nbsp;</p>
+  </section>
+
+  <section class="card">
+    <h2>Step through the state machine</h2>
+    <div class="row">
+      <button id="reset">⏮ Reset</button><button id="prev">◀ Back</button>
+      <button id="next" class="primary">Step ▶</button><button id="play">▶ Play</button>
+      <label class="inline">speed <input id="speed" type="range" min="1" max="30" value="8"></label>
+      <span class="spacer"></span><span class="step-info" id="pos"></span>
+    </div>
+    <div class="grid stepgrid" style="margin-top:10px">
+      <div id="diagram" aria-label="State diagram"></div>
+      <div>
+        <table class="kv">
+          <tr><th>byte</th><td><span class="big" id="sByte">–</span></td></tr>
+          <tr><th>state</th><td id="sFrom" class="mono">START</td></tr>
+          <tr><th>next state</th><td id="sTo" class="mono">–</td></tr>
+          <tr><th>wrote</th><td id="sWrote" class="mono">–</td></tr>
+          <tr><th>line</th><td id="sLine" class="mono">1</td></tr>
+        </table>
+        <p class="note">Output so far</p>
+        <pre id="sOut" class="out" style="max-height:200px"></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="how">
+    <h2>How it works</h2>
+    <p class="lead">One C function per state. Each call reads one byte, writes the output for that transition, and returns the next state. <code>main()</code> is just <code>while ((c = getchar()) != EOF) state = step(state, c, &amp;pos);</code></p>
+    <ul class="note">
+      <li>A comment becomes one space; newlines inside block comments are kept, so error line numbers still match the source.</li>
+      <li><code>/</code> is held for one byte: <code>//</code> and <code>/*</code> start comments; anything else (even a quote) writes the <code>/</code> and is processed as fresh input.</li>
+      <li>Line counting lives in <code>step()</code>, once for every state; the comment's start line is saved when <code>/*</code> is seen.</li>
+      <li>Tested with 251 golden cases, an independent table-driven oracle (random differential tests + libFuzzer), ASan/UBSan, Valgrind and ARM32 under QEMU.</li>
+    </ul>
+  </section>
+</main>
+<footer class="site"><div class="wrap">Compiled from C with Emscripten; runs entirely in your browser. Source code is in a private repository.</div></footer>
+<script src="shared/runtime.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

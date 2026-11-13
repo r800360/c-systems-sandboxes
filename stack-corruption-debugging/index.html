@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stack Corruption Forensics</title>
+<meta name="description" content="A NULL store and an off-by-one stack write, built about 70 ways on x86-64, arm64, ARM32 and WebAssembly: where the stray write lands, what each build does, and which tools catch it.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232457d6'/%3E%3Ctext x='8' y='12' font-size='10' text-anchor='middle' fill='white' font-family='monospace'%3EC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="shared/style.css">
+<style>
+  .code { margin: 0; padding: 8px 0; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; overflow: auto; max-height: 560px; font: 12.5px/1.55 var(--mono); }
+  .code div { padding: 0 10px; white-space: pre; }
+  .code div .ln { display: inline-block; width: 2.6em; color: var(--muted); user-select: none; }
+  .code div.bug { background: var(--bad-soft); }
+  .code div.fix { background: var(--ok-soft); }
+  .code div.dir { color: var(--violet); }
+  .facts { margin: 0; padding-left: 18px; }
+  .facts li { margin: 6px 0; }
+  .v { display: inline-block; font: 600 11.5px var(--mono); padding: 2px 8px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
+  .v.caught, .v.ok { color: var(--ok); background: var(--ok-soft); }
+  .v.crash, .v.trap { color: var(--amber); background: var(--amber-soft); }
+  .v.corrupt { color: #fff; background: var(--bad); }
+  .v.silent { color: var(--bad); background: var(--bad-soft); }
+  .v.vanished { color: var(--violet); background: var(--violet-soft); }
+  .v.other { color: var(--muted); background: var(--panel-2); border-color: var(--border); }
+  .v.na { color: var(--muted); background: transparent; font-weight: 400; }
+  table.mx { border-collapse: collapse; width: 100%; font-size: 13px; }
+  table.mx th, table.mx td { padding: 5px 6px; border-bottom: 1px solid var(--border); text-align: center; }
+  table.mx th { font-size: 12px; color: var(--muted); font-weight: 600; }
+  table.mx th.plat { border-left: 2px solid var(--border); }
+  table.mx td.first { border-left: 2px solid var(--border); }
+  table.mx td.row, table.mx th.row { text-align: left; white-space: nowrap; }
+  table.mx td button { all: unset; cursor: pointer; }
+  table.mx td button:focus-visible .v { outline: 2px solid var(--accent); }
+  table.mx tr.sel td { background: var(--accent-soft); }
+  .mxwrap { overflow-x: auto; }
+  .frame { display: grid; grid-template-columns: 58px minmax(120px, 230px) minmax(0, 1fr); gap: 3px 10px; align-items: stretch; font: 12px var(--mono); }
+  .frame .off { color: var(--muted); text-align: right; align-self: center; }
+  .frame .slot { border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--panel); transition: background .25s, border-color .25s; }
+  .frame .slot .val { font-weight: 700; }
+  .frame .slot.array { background: var(--accent-soft); border-color: var(--accent); }
+  .frame .slot.local { background: var(--teal-soft); border-color: var(--teal); }
+  .frame .slot.canary { background: var(--amber-soft); border-color: var(--amber); }
+  .frame .slot.ret, .frame .slot.fp, .frame .slot.saved { background: var(--violet-soft); border-color: var(--violet); }
+  .frame .slot.unused { color: var(--muted); border-style: dashed; }
+  .frame .slot.hit { background: var(--bad); border-color: var(--bad); color: #fff; }
+  .frame .slot.hit .val { color: #fff; }
+  .frame .ann { color: var(--muted); align-self: center; font-family: var(--sans); font-size: 12.5px; }
+  .frame .ann b { color: var(--bad); }
+  .frame .sep { grid-column: 1 / -1; font: 600 11px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding-top: 6px; }
+  .outcome { border-left: 4px solid var(--bad); padding: 8px 12px; background: var(--panel-2); border-radius: 6px; margin-top: 10px; }
+  .outcome.good { border-left-color: var(--ok); }
+  .detail { margin-top: 12px; }
+  .detail pre.out { max-height: 300px; font-size: 12px; }
+  .memrow { display: grid; grid-template-columns: 70px repeat(auto-fit, minmax(54px, 1fr)); gap: 3px; margin-top: 4px; font: 11.5px var(--mono); }
+  .memrow .lbl { color: var(--muted); align-self: center; }
+  .memrow .cell { padding: 2px 0; }
+  .memrow .cell .a { font-size: 9.5px; }
+  .memrow .cell.chg { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); font-weight: 700; }
+  .memrow .cell.wrote { background: var(--accent-soft); font-weight: 700; }
+  .memrow .cell.isa { box-shadow: inset 0 0 0 2px var(--teal); }
+  .memrow .cell.isb { box-shadow: inset 0 0 0 2px var(--accent); }
+  .gdb { font-size: 12px; }
+  #runout, #runerr { min-height: 120px; }
+  .sub { font-size: 13px; font-weight: 600; margin: 12px 0 6px; }
+  .toolchain { font: 11.5px var(--mono); color: var(--muted); }
+  @media (max-width: 640px) { .frame { grid-template-columns: 44px minmax(110px, 1fr); } .frame .ann { grid-column: 2; } }
+</style>
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <h1>Stack Corruption Forensics</h1>
+  <p>Two memory bugs in a 40-line C program, built about 70 ways on four platforms. Where the stray write lands, what each build does, and which tools notice are different almost everywhere. Every result on this page was produced by CI.</p>
+  <nav><a href="../">All sandboxes</a></nav>
+</div></header>
+
+<main class="wrap grid">
+  <section class="card">
+    <h2>The program and its two bugs</h2>
+    <div class="grid cols-2">
+      <div id="listing"></div>
+      <div>
+        <p class="lead"><b>Bug 1, NULL store:</b> <code>*j = 0</code> writes through a null pointer. <b>Bug 2, off-by-one:</b> <code>i &lt;= LEN</code> runs the loop five times, so <code>b[4]</code> is written: one <code>int</code> past the end of <code>main</code>'s array, into whatever <code>main</code>'s frame keeps there.</p>
+        <p class="note">Both are undefined behavior: C promises nothing about what happens. Here is what actually happened:</p>
+        <ul class="facts" id="facts"></ul>
+        <p class="note" id="fixednote"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Where does <code>b[4]</code> land? <span class="right note">main's frame, captured with gdb</span></h2>
+    <div class="row" id="framepick"></div>
+    <div class="grid cols-2" style="margin-top:10px">
+      <div>
+        <div class="row"><button class="primary" id="animate">Run the loop</button><span class="note" id="loopstate"></span></div>
+        <div class="frame" id="frame" style="margin-top:10px"></div>
+      </div>
+      <div>
+        <div id="framewhy"></div>
+        <div class="outcome" id="outcome"></div>
+        <p class="note" id="framecmd"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Who catches what <span class="right note">click a cell for the command and the tool's report</span></h2>
+    <div class="legend" id="legend"></div>
+    <div class="mxwrap" style="margin-top:8px"><table class="mx" id="matrix"></table></div>
+    <div class="sub">Compile-time and static analysis (no run needed)</div>
+    <div class="mxwrap"><table class="mx" id="static"></table></div>
+    <div class="detail" id="detail"></div>
+  </section>
+
+  <section class="card">
+    <h2>Run it in your browser <span class="right note">the same WebAssembly files CI tested</span></h2>
+    <div class="row"><span class="note" style="width:56px">Bug</span><div class="tabs" id="pickbug"></div></div>
+    <div class="row"><span class="note" style="width:56px">Build</span><div class="row" id="pickrow"></div></div>
+    <div class="row"><button class="primary" id="run">Run</button><span id="runstatus"></span><span class="note" id="runci"></span></div>
+    <div class="grid cols-2" style="margin-top:10px">
+      <div><div class="note">stdout</div><pre class="out" id="runout"></pre></div>
+      <div><div class="note">stderr</div><pre class="out err" id="runerr"></pre></div>
+    </div>
+    <div id="mem"></div>
+  </section>
+
+  <section class="card">
+    <h2>Debugging it with gdb <span class="right note">transcripts from CI</span></h2>
+    <div class="tabs" id="gdbpick"></div>
+    <p class="note" id="gdbcmd"></p>
+    <pre class="out gdb" id="gdbout"></pre>
+  </section>
+</main>
+<footer class="site"><div class="wrap">
+  <div>Native results: GitHub Actions x86-64 and arm64 runners; ARM32: cross-compiled, run under QEMU user mode and debugged through its gdb stub; WebAssembly: Emscripten, run in Node by CI and in your browser here. Addresses and process IDs are normalized; frame offsets are relative to <code>b</code>.</div>
+  <div class="toolchain" id="toolchain"></div>
+  <div>The demo program is adapted from an example licensed under the <a href="LICENSE.txt">Apache License 2.0</a>. Source code is in a private repository.</div>
+</div></footer>
+<script src="shared/runtime.js"></script>
+<script src="sbrun.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

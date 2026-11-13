@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en" data-slug="csv-column-selector" data-version="66bd6d23982bdf8b">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zero-Copy CSV Selector</title>
+<meta name="description" content="A C tool that picks and reorders CSV columns without copying: see the 128-byte row buffer, the NUL terminators and the pointer table in live WebAssembly memory. Private demo: available on request.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%232457d6'/%3E%3Ctext x='8' y='12' font-size='10' text-anchor='middle' fill='white' font-family='monospace'%3EC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="shared/style.css">
+<style>
+  .lockgrid { display: grid; gap: 18px; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); align-items: start; }
+  @media (max-width: 860px) { .lockgrid { grid-template-columns: minmax(0, 1fr); } }
+  .shot { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+  .shot img.preview { display: block; width: 100%; height: auto; }
+  .shot .badge { position: absolute; left: 12px; top: 12px; font: 600 12px var(--sans); padding: 4px 10px; border-radius: 999px;
+    background: var(--panel); border: 1px solid var(--border); color: var(--muted); }
+  form { display: flex; gap: 8px; margin: 10px 0 6px; }
+  form input { flex: 1; }
+  .note.bad { color: var(--bad); }
+  .lock { font-size: 28px; line-height: 1; }
+</style>
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <h1>Zero-Copy CSV Selector</h1>
+  <p>A C tool that picks and reorders CSV columns without copying: see the 128-byte row buffer, the NUL terminators and the pointer table in live WebAssembly memory.</p>
+  <nav><a href="../">All sandboxes</a></nav>
+</div></header>
+<main class="wrap grid">
+  <section class="card">
+    <div class="lockgrid">
+      <div class="shot"><img class="preview" src="preview.png" alt="Screenshot of the demo" width="960" height="645"><span class="badge">Preview · private demo</span></div>
+      <div>
+        <div class="lock" aria-hidden="true">🔒</div>
+        <h2 style="font-size:18px;margin:8px 0 6px">Private demo</h2>
+        <p class="note">This interactive demo is shared privately. If you were sent a link, opening it unlocks the demo. If you were sent a passphrase, enter it here.</p>
+        <form id="form" autocomplete="off">
+          <input id="pass" type="password" placeholder="Passphrase" aria-label="Passphrase" spellcheck="false">
+          <button id="go" class="primary" type="submit">Unlock</button>
+        </form>
+        <p id="status" class="note" role="status"></p>
+        <p id="open" hidden><a class="btn" href="app/">Open the demo</a></p>
+        <p class="note">Decryption happens in your browser; nothing you type is sent anywhere. For access, contact the author.</p>
+        <p class="note">Its code includes GPL-3.0 licensed material; the complete source is included in the unlocked demo.</p>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="site"><div class="wrap">Built from C by CI and compiled to WebAssembly. The demo itself is published only in encrypted form.</div></footer>
+<script src="unlock.js"></script>
+</body>
+</html>
