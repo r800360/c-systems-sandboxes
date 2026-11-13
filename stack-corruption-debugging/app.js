@@ -40,12 +40,19 @@
     fact(c('arm32', 'O0-plain', 'oob').verdict === 'corrupt', chip('corrupt'), ' ARM32, gcc -O0, no stack protector: ', h('code', {}, 'b[4]'), ' is ', h('code', {}, 'a'), ', so the program prints ', h('code', {}, 'a: 5'), '. This is the classic symptom.'),
     fact(c('arm32', 'O0-default', 'oob').verdict === 'caught', chip('caught'), ' ARM32 with the default stack protector: ', h('code', {}, 'b[4]'), ' is the canary, so the program aborts with "stack smashing detected".'),
     fact(c('x86-64', 'O0-plain', 'oob').verdict === 'silent', chip('silent'), ' x86-64: ', h('code', {}, 'b[4]'), ' is alignment padding. Nothing reads it, so there is no symptom, but the bug is still there.'),
+    fact(c('arm64', 'clang-O0', 'oob').verdict === 'corrupt' && c('arm64', 'O0-plain', 'oob').verdict === 'silent', chip('corrupt'), ' arm64: the compiler decides. gcc leaves padding at ', h('code', {}, 'b[4]'), '; clang puts ', h('code', {}, 'a'), ' there and prints ', h('code', {}, 'a: 5'), '.'),
     fact(c('wasm', 'O0-plain', 'null').verdict === 'silent', chip('silent'), ' WebAssembly: address 0 is ordinary memory, so ', h('code', {}, '*j = 0'), ' simply succeeds. Emscripten\'s debug build plants a marker at address 0 and checks it at exit.'),
     fact(clangGone.verdict === 'vanished', chip('vanished'), ' clang -O2: the NULL store makes the whole call path undefined, so ', h('code', {}, 'main'), ' compiles to nothing. It prints nothing and exits with status ', (clangGone.status || '').replace('exit ', ''), '.'),
     fact(PLATS.every(([p]) => p === 'arm32' || c(p, 'asan', 'oob').verdict === 'caught'), chip('caught'), ' Only AddressSanitizer reports the off-by-one everywhere it runs, and only below -O2: clang -O2 optimizes the access away before ASan can check it. Valgrind, UBSan and every static analyzer miss it.'),
   ].filter(Boolean));
-  let fixedOk = 0, fixedAll = 0;
-  for (const p of Object.values(P)) for (const r of Object.values(p.rows)) if (r.fixed) { fixedAll++; if (r.fixed.verdict === 'ok') fixedOk++; }
+  let fixedOk = 0, fixedAll = 0, builds = 0;
+  for (const [name, p] of Object.entries(P)) {
+    for (const r of Object.values(p.rows)) {
+      if (r.fixed) { fixedAll++; if (r.fixed.verdict === 'ok') fixedOk++; }
+      if (name !== 'static') builds += ['fixed', 'null', 'oob'].filter((b) => r[b]).length;
+    }
+  }
+  $('#nbuilds').textContent = String(builds);
   $('#fixednote').textContent = `The fixed program is clean in ${fixedOk} of ${fixedAll} builds and analyses: every compiler, sanitizer, Valgrind run, gdb session and analyzer, on every platform.`;
 
   // ----------------------------------------------------------------- frames
@@ -71,7 +78,7 @@
   };
   const PLATWHY = {
     'x86-64': 'x86-64 System V ABI: a local array of 16 bytes or more is 16-byte aligned, which leaves room above b.',
-    arm64: 'AArch64: gcc and clang keep the frame record (saved x29, x30) at one end of the frame and the locals together.',
+    arm64: 'AArch64: gcc stores the frame record (saved x29, x30) at the bottom of the frame, below the locals; clang stores it at the top and packs a directly above b. Same CPU, different layout.',
     arm32: 'ARM AAPCS needs only 4-byte alignment for an int array, so neighbours sit right next to b.',
     wasm: 'clang\'s wasm32 target also aligns the 16-byte array to 16. The frame lives in linear memory, on the shadow stack.',
   };
